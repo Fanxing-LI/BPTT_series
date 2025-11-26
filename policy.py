@@ -6,7 +6,7 @@ from gym import spaces
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 from VisFly.utils.policies.extractors import create_mlp, load_extractor_class
 from VisFly.utils.policies.td_policies import obs_as_tensor
-import algorithms.tools as tools
+from . import tools
 # CAP the standard deviation of the actor
 import torch.distributions as torchd
 

@@ -1,4 +1,4 @@
-from algorithms.BPTT import BPTT
+from algorithms.BPTT_series.BPTT import BPTT
 
 
 class SHAC(BPTT):
