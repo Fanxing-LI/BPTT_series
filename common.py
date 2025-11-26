@@ -754,9 +754,9 @@ class FullDictReplayBuffer(DictReplayBuffer):
             handle_timeout_termination: bool = True,
     ):
         super(ReplayBuffer, self).__init__(buffer_size, observation_space, action_space, device, n_envs=n_envs)
-        self.states = th.zeros((self.buffer_size, n_envs, 22), dtype=th.float32)
         assert isinstance(self.obs_shape, dict), "DictReplayBuffer must be used with Dict obs space only"
         self.buffer_size = max(buffer_size // n_envs, 1)
+        self.states = th.zeros((self.buffer_size, n_envs, 22), dtype=th.float32)
 
         # Check that the replay buffer can fit into the memory
         if psutil is not None:
@@ -833,6 +833,7 @@ class FullDictReplayBuffer(DictReplayBuffer):
             self,
             batch_size: int,
             env: Optional[VecNormalize] = None,
+            env_indices: Optional[th.Tensor] = None,
     ) -> FullDictReplayBufferSamples:
         """
         Sample elements from the replay buffer.
@@ -842,15 +843,18 @@ class FullDictReplayBuffer(DictReplayBuffer):
             to normalize the observations/rewards when sampling
         :return:
         """
-        return super(ReplayBuffer, self).sample(batch_size=batch_size, env=env)
+        upper_bound = self.buffer_size if self.full else self.pos
+        batch_inds = np.random.randint(0, upper_bound, size=batch_size)
+        return self._get_samples(batch_inds, env=env, env_indices=env_indices)
 
     def _get_samples(  # type: ignore[override]
             self,
             batch_inds: th.Tensor,
             env: Optional[VecNormalize] = None,
+            env_indices: Optional[th.Tensor] = None,
     ) -> DictReplayBufferSamples:
         # Sample randomly the env idx
-        env_indices = th.randint(0, high=self.n_envs, size=(len(batch_inds),))
+        env_indices = th.randint(0, high=self.n_envs, size=(len(batch_inds),)) if env_indices is not None else env_indices
 
         # Normalize if needed and remove extra dimension (we are using only one env for now)
         obs_ = self._normalize_obs({key: obs[batch_inds, env_indices, :] for key, obs in self.observations.items()}, env)
