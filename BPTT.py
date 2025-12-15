@@ -34,8 +34,8 @@ from .common import FullDictReplayBuffer, DictReplayBuffer, compute_td_returns, 
 from .policy import Policy as SimplePolicy
 
 
-cd = lambda x: x.clone().detach()
-cdu = lambda x: x.clone().detach().cpu()
+CaD = lambda x: x.clone().detach()
+CaDu = lambda x: x.clone().detach().cpu()
 
 
 # from stable_baselines3.common.buffers import DictReplayBuffer
@@ -196,7 +196,6 @@ class BPTT(OffPolicyAlgorithm):
         ent_coef_loss = None
         self.env.detach()
         reward_loss, entropy_loss = 0., 0.
-        # pre_active = th.ones((self.actor_batch_size,), device=self.device, dtype=th.bool)
         discount_factor = th.ones((self.env.num_envs,), dtype=th.float32, device=self.device)
         episode_done = th.zeros((self.env.num_envs,), device=self.device, dtype=th.bool)
         pre_start = th.ones((self.env.num_envs,), device=self.device, dtype=th.bool)  # is this step the first step
@@ -234,24 +233,24 @@ class BPTT(OffPolicyAlgorithm):
             discount_factor = discount_factor * self.gamma * ~done + done
             # pre_active = pre_active & ~done
 
-            self.rollout_buffer.add(obs=cd(pre_obs),
-                                    reward=cd(reward),
-                                    action=cd(actions),
-                                    next_obs=cd(obs),
-                                    done=cd(done),
-                                    episode_done=cd(episode_done),
-                                    value=cd(next_values),
+            self.rollout_buffer.add(obs=CaD(pre_obs),
+                                    reward=CaD(reward),
+                                    action=CaD(actions),
+                                    next_obs=CaD(obs),
+                                    done=CaD(done),
+                                    episode_done=CaD(episode_done),
+                                    value=CaD(next_values),
                                     )
             self._store_transition(self.replay_buffer,
-                                   buffer_action=cdu(actions),
-                                   new_obs=cdu(obs),
-                                   reward=cdu(reward),
-                                   dones=cdu(done),
+                                   buffer_action=CaDu(actions),
+                                   new_obs=CaDu(obs),
+                                   reward=CaDu(reward),
+                                   dones=CaDu(done),
                                    infos=info,
-                                   states=cdu(self.env.full_state)
+                                   states=CaDu(self.env.full_state)
                                    )
-            self._update_info_buffer(infos=info, dones=cdu(done))
-            self.check_whether_dump(log_interval=log_interval, dones=cdu(done))
+            self._update_info_buffer(infos=info, dones=CaDu(done))
+            self.check_whether_dump(log_interval=log_interval, dones=CaDu(done))
 
         # update
         actor_loss = (reward_loss+entropy_loss).mean()  # average of value and accumlative rewards
