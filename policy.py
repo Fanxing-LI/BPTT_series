@@ -9,7 +9,7 @@ from VisFly.utils.policies.td_policies import obs_as_tensor
 from . import tools
 # CAP the standard deviation of the actor
 import torch.distributions as torchd
-
+from VisFly.utils.type import TensorDict
 LOG_STD_MAX = 2
 LOG_STD_MIN = -10
 MAX_STD = 1
@@ -227,12 +227,15 @@ class Actor(BaseModel):
         #     return self.get_dist(obs)
         return self.get_dist(obs).rsample().clamp(min=self._low, max=self._high)
 
-    def action_and_entropy(self, obs: th.Tensor) -> Tuple[th.Tensor, th.Tensor]:
+    def action_and_entropy(self, obs: th.Tensor, deterministic: bool=False) -> Tuple[th.Tensor, th.Tensor]:
         """
         Returns the action and the entropy of the distribution.
         """
         dist = self.get_dist(obs)
-        return dist.rsample().clamp(min=self._low, max=self._high), dist.entropy()
+        if deterministic:
+            return dist.mean.clamp(min=self._low, max=self._high), dist.entropy()
+        else:
+            return dist.rsample().clamp(min=self._low, max=self._high), dist.entropy()
 
     def get_dist(self, obs):
         obs = obs_as_tensor(obs, device=self.device)
@@ -335,8 +338,33 @@ class Policy(nn.Module):
         return self.critic(obs)
 
     @th.no_grad()
-    def predict(self, obs: Dict[str, th.Tensor], deterministic=False) -> Tuple[th.Tensor, th.Tensor]:
-        return self.actor.predict(obs, deterministic=deterministic)
+    def predict(self, obs: Dict[str, th.Tensor], deterministic=False, sample=False) -> Tuple[th.Tensor, th.Tensor]:
+        if not sample:
+            return self.actor.predict(obs, deterministic=deterministic)
+        else:
+            num_sample = 5
+            obs_batch = TensorDict({
+                k: v.unsqueeze(0).repeat(num_sample+1, *([1] * (v.dim()))) for k, v in obs.items()
+            })
+            action_mean = self.actor.predict(obs, deterministic=True)
+            action_sample = self.actor.predict(obs_batch[:-1], deterministic=False)
+            action_sample = (self.actor.predict(obs_batch[:-1], deterministic=True) \
+                            + th.randn_like(action_sample) * 0.05).clamp(-1,1)
+            # + (th.rand_like(action_sample)-0.5) * 0.2).clamp(-1, 1)
+            actions = th.cat([action_mean.unsqueeze(0), action_sample], dim=0)
+            q = self.critic(obs_batch, actions)[0].squeeze()
+            max_q, max_q_indices = th.max(q, dim=0)
+            # print(q.std(), q.mean())
+            # if (max_q - q[0]).abs() <= 0.01:
+            #     max_q_indices = th.tensor([0])
+            # max_q_indices = th.where(
+            #     (max_q - q[0]).abs() <= 0.04,
+            #     th.zeros_like(max_q_indices, device=max_q_indices.device),
+            #     max_q_indices
+            #     )
+            max_q_indices[(max_q - q[0]).abs() <= 0.01] = 0
+            selected_actions = actions[max_q_indices.squeeze(),th.arange(len(obs), device=max_q_indices.device),]
+            return selected_actions
 
     def set_training_mode(self, mode: bool = True):
         self.actor.train(mode)
