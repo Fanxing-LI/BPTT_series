@@ -854,7 +854,7 @@ class FullDictReplayBuffer(DictReplayBuffer):
             env_indices: Optional[th.Tensor] = None,
     ) -> DictReplayBufferSamples:
         # Sample randomly the env idx
-        env_indices = th.randint(0, high=self.n_envs, size=(len(batch_inds),)) if env_indices is not None else env_indices
+        env_indices = th.randint(0, high=self.n_envs, size=(len(batch_inds),)) if env_indices is None else env_indices
 
         # Normalize if needed and remove extra dimension (we are using only one env for now)
         obs_ = self._normalize_obs({key: obs[batch_inds, env_indices, :] for key, obs in self.observations.items()}, env)
