@@ -34,8 +34,8 @@ from .common import FullDictReplayBuffer, DictReplayBuffer, compute_td_returns, 
 from .policy import Policy as SimplePolicy
 
 
-cd = lambda x: x.clone().detach()
-cdu = lambda x: x.clone().detach().cpu()
+CaD = lambda x: x.clone().detach()
+CaDu = lambda x: x.clone().detach().cpu()
 
 
 # from stable_baselines3.common.buffers import DictReplayBuffer
@@ -196,7 +196,6 @@ class BPTT(OffPolicyAlgorithm):
         ent_coef_loss = None
         self.env.detach()
         reward_loss, entropy_loss = 0., 0.
-        # pre_active = th.ones((self.actor_batch_size,), device=self.device, dtype=th.bool)
         discount_factor = th.ones((self.env.num_envs,), dtype=th.float32, device=self.device)
         episode_done = th.zeros((self.env.num_envs,), device=self.device, dtype=th.bool)
         pre_start = th.ones((self.env.num_envs,), device=self.device, dtype=th.bool)  # is this step the first step
@@ -205,7 +204,7 @@ class BPTT(OffPolicyAlgorithm):
             # dream a horizon of experience
             pre_obs = obs.clone()
             # iteration
-            actions, entropy = self.policy.actor.action_and_entropy(pre_obs)
+            actions, entropy = self.policy.actor.action_and_entropy(pre_obs, deterministic=True)
             # step
             obs, reward, done, info = self.env.step(actions)
             for i in range(len(episode_done)):
@@ -221,7 +220,9 @@ class BPTT(OffPolicyAlgorithm):
             with th.no_grad():
                 next_actions = self.policy.actor(obs)
                 next_actions = next_actions if not isinstance(next_actions, tuple) else next_actions[0]
-                next_values, _ = th.cat(self.policy.critic_target(obs.detach(), next_actions.detach()), dim=-1).min(dim=-1)
+                f = th.min if reward.mean() >= 0 else th.max
+                # next_values, _ = th.cat(self.policy.critic_target(obs.detach(), next_actions.detach()), dim=-1).min(dim=-1)
+                next_values, _ = f(th.cat(self.policy.critic_target(obs.detach(), next_actions.detach()), dim=-1), dim=-1)
 
             # compute the loss
             reward_loss = reward_loss - reward * discount_factor
@@ -234,24 +235,24 @@ class BPTT(OffPolicyAlgorithm):
             discount_factor = discount_factor * self.gamma * ~done + done
             # pre_active = pre_active & ~done
 
-            self.rollout_buffer.add(obs=cd(pre_obs),
-                                    reward=cd(reward),
-                                    action=cd(actions),
-                                    next_obs=cd(obs),
-                                    done=cd(done),
-                                    episode_done=cd(episode_done),
-                                    value=cd(next_values),
+            self.rollout_buffer.add(obs=CaD(pre_obs),
+                                    reward=CaD(reward),
+                                    action=CaD(actions),
+                                    next_obs=CaD(obs),
+                                    done=CaD(done),
+                                    episode_done=CaD(episode_done),
+                                    value=CaD(next_values),
                                     )
             self._store_transition(self.replay_buffer,
-                                   buffer_action=cdu(actions),
-                                   new_obs=cdu(obs),
-                                   reward=cdu(reward),
-                                   dones=cdu(done),
+                                   buffer_action=CaDu(actions),
+                                   new_obs=CaDu(obs),
+                                   reward=CaDu(reward),
+                                   dones=CaDu(done),
                                    infos=info,
-                                   states=cdu(self.env.full_state)
+                                   states=CaDu(self.env.full_state)
                                    )
-            self._update_info_buffer(infos=info, dones=cdu(done))
-            self.check_whether_dump(log_interval=log_interval, dones=cdu(done))
+            self._update_info_buffer(infos=info, dones=CaDu(done))
+            self.check_whether_dump(log_interval=log_interval, dones=CaDu(done))
 
         # update
         actor_loss = (reward_loss+entropy_loss).mean()  # average of value and accumlative rewards
@@ -267,9 +268,13 @@ class BPTT(OffPolicyAlgorithm):
 
         # # update critic
         for i in range(self.gradient_steps):
-            values, _ = th.cat(self.policy.critic(self.rollout_buffer.obs, self.rollout_buffer.action), dim=-1).min(dim=-1)
+            values = self.policy.critic(self.rollout_buffer.obs, self.rollout_buffer.action)
+            # values, _ = th.cat(self.policy.critic(self.rollout_buffer.obs, self.rollout_buffer.action), dim=-1).min(dim=-1)
             target = self.rollout_buffer.returns
-            critic_loss = th.nn.functional.mse_loss(target, values)
+            critic_loss = 0
+            for value in values:
+                critic_loss += th.nn.functional.mse_loss(target, value[...,0])
+            # critic_loss = th.nn.functional.mse_loss(target, values)
             self.policy.critic.optimizer.zero_grad()
             critic_loss.backward()
             th.nn.utils.clip_grad_norm_(self.policy.critic.parameters(), 0.5)
