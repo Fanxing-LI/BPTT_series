@@ -362,8 +362,9 @@ class Policy(nn.Module):
             #     th.zeros_like(max_q_indices, device=max_q_indices.device),
             #     max_q_indices
             #     )
-            max_q_indices[(max_q - q[0]).abs() <= 0.01] = 0
-            selected_actions = actions[max_q_indices.squeeze(),th.arange(len(obs), device=max_q_indices.device),]
+            mask = th.atleast_1d((max_q - q[0]).abs() <= 0.01)
+            max_q_indices = th.where(mask, th.zeros_like(max_q_indices), max_q_indices)
+            selected_actions = actions[max_q_indices.squeeze(),th.arange(len(max_q_indices), device=max_q_indices.device),]
             return selected_actions
 
     def set_training_mode(self, mode: bool = True):
