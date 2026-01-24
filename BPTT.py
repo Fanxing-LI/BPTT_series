@@ -93,7 +93,7 @@ class BPTT(OffPolicyAlgorithm):
         self.gamma = gamma
         self.comment = comment
         self.env = env
-        self.env = train_env
+        self.train_env = train_env
         self.num_envs = env.num_envs
 
         self.learning_rate = learning_rate

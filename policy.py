@@ -291,7 +291,7 @@ class Policy(nn.Module):
             observation_space: spaces.Dict,
             action_space: spaces.Space,
             lr_schedule: Optional[List[float]] = None,
-            features_extractor_class: Optional[Union[Type[LatentCombineExtractor], nn.Module]] = "EmptyExtractor",
+            features_extractor_class: Optional[Union[Type[LatentCombineExtractor], nn.Module]] = "FlexibleExtractor",
             features_extractor_kwargs: Optional[Dict[str, Any]] = {},
             activation_fn: Type[nn.Module] = "relu",
             actor: dict = {},
