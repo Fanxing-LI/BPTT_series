@@ -204,7 +204,7 @@ class BPTT(OffPolicyAlgorithm):
             # dream a horizon of experience
             pre_obs = obs.clone()
             # iteration
-            actions, entropy = self.policy.actor.action_and_entropy(pre_obs)
+            actions, entropy = self.policy.actor.action_and_entropy(pre_obs, deterministic=True)
             # step
             obs, reward, done, info = self.env.step(actions)
             for i in range(len(episode_done)):
@@ -220,7 +220,9 @@ class BPTT(OffPolicyAlgorithm):
             with th.no_grad():
                 next_actions = self.policy.actor(obs)
                 next_actions = next_actions if not isinstance(next_actions, tuple) else next_actions[0]
-                next_values, _ = th.cat(self.policy.critic_target(obs.detach(), next_actions.detach()), dim=-1).min(dim=-1)
+                f = th.min if reward.mean() >= 0 else th.max
+                # next_values, _ = th.cat(self.policy.critic_target(obs.detach(), next_actions.detach()), dim=-1).min(dim=-1)
+                next_values, _ = f(th.cat(self.policy.critic_target(obs.detach(), next_actions.detach()), dim=-1), dim=-1)
 
             # compute the loss
             reward_loss = reward_loss - reward * discount_factor
@@ -266,9 +268,13 @@ class BPTT(OffPolicyAlgorithm):
 
         # # update critic
         for i in range(self.gradient_steps):
-            values, _ = th.cat(self.policy.critic(self.rollout_buffer.obs, self.rollout_buffer.action), dim=-1).min(dim=-1)
+            values = self.policy.critic(self.rollout_buffer.obs, self.rollout_buffer.action)
+            # values, _ = th.cat(self.policy.critic(self.rollout_buffer.obs, self.rollout_buffer.action), dim=-1).min(dim=-1)
             target = self.rollout_buffer.returns
-            critic_loss = th.nn.functional.mse_loss(target, values)
+            critic_loss = 0
+            for value in values:
+                critic_loss += th.nn.functional.mse_loss(target, value[...,0])
+            # critic_loss = th.nn.functional.mse_loss(target, values)
             self.policy.critic.optimizer.zero_grad()
             critic_loss.backward()
             th.nn.utils.clip_grad_norm_(self.policy.critic.parameters(), 0.5)
