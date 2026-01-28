@@ -12,7 +12,7 @@ import torch.distributions as torchd
 from VisFly.utils.type import TensorDict
 LOG_STD_MAX = 2
 LOG_STD_MIN = -10
-MAX_STD = 1
+MAX_STD = 0.3
 MIN_STD = 0.1
 
 
@@ -294,7 +294,7 @@ class Policy(nn.Module):
             observation_space: spaces.Dict,
             action_space: spaces.Space,
             lr_schedule: Optional[List[float]] = None,
-            features_extractor_class: Optional[Union[Type[LatentCombineExtractor], nn.Module]] = "EmptyExtractor",
+            features_extractor_class: Optional[Union[Type[LatentCombineExtractor], nn.Module]] = "FlexibleExtractor",
             features_extractor_kwargs: Optional[Dict[str, Any]] = {},
             activation_fn: Type[nn.Module] = "relu",
             actor: dict = {},
@@ -349,7 +349,7 @@ class Policy(nn.Module):
             action_mean = self.actor.predict(obs, deterministic=True)
             action_sample = self.actor.predict(obs_batch[:-1], deterministic=False)
             action_sample = (self.actor.predict(obs_batch[:-1], deterministic=True) \
-                            + th.randn_like(action_sample) * 0.02).clamp(-1,1)
+                            + th.randn_like(action_sample) * 0.05).clamp(-1,1)
             # + (th.rand_like(action_sample)-0.5) * 0.2).clamp(-1, 1)
             actions = th.cat([action_mean.unsqueeze(0), action_sample], dim=0)
             q = self.critic(obs_batch, actions)[0].squeeze()
