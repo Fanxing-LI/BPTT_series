@@ -180,6 +180,7 @@ class BPTT(OffPolicyAlgorithm):
         self.critic_batch_norm_stats_target = get_parameters_by_name(self.policy.critic_target, ["running_"])
 
     def create_save_path(self, comment=None):
+        self.tensorboard_log = self.save_path
         self.comment = self.comment if comment is None else comment
         self.comment = "std" if self.comment is None else self.comment
         index = 1
@@ -204,7 +205,7 @@ class BPTT(OffPolicyAlgorithm):
             # dream a horizon of experience
             pre_obs = obs.clone()
             # iteration
-            actions, entropy = self.policy.actor.action_and_entropy(pre_obs, deterministic=True)
+            actions, entropy = self.policy.action_and_entropy(pre_obs, deterministic=False)
             # step
             obs, reward, done, info = self.env.step(actions)
             for i in range(len(episode_done)):
@@ -218,7 +219,7 @@ class BPTT(OffPolicyAlgorithm):
 
             # compute the temporal difference
             with th.no_grad():
-                next_actions = self.policy.actor(obs)
+                next_actions = self.policy.predict(obs)
                 next_actions = next_actions if not isinstance(next_actions, tuple) else next_actions[0]
                 f = th.min if reward.mean() >= 0 else th.max
                 # next_values, _ = th.cat(self.policy.critic_target(obs.detach(), next_actions.detach()), dim=-1).min(dim=-1)
@@ -576,7 +577,7 @@ class BPTT(OffPolicyAlgorithm):
             # Patch to load Policy saved using SB3 < 1.7.0
             # the error is probably due to old policy being loaded
             # See https://github.com/DLR-RM/stable-baselines3/issues/1233
-            if "pi_features_extractor" in str(e) and "Missing key(s) in state_dict" in str(e):
+            if ("pi_features_extractor" in str(e) and "Missing key(s) in state_dict" in str(e)) :
                 model.set_parameters(params, exact_match=False, device=device)
                 warnings.warn(
                     "You are probably loading a model saved with SB3 < 1.7.0, "
@@ -586,6 +587,11 @@ class BPTT(OffPolicyAlgorithm):
                     f"Original error: {e} \n"
                     "Note: the model should still work fine, this only a warning."
                 )
+            elif  "frozen_part" in str(e):
+                warnings.warn(
+                    "You are probably loading a StagePolicy model with frozen part"
+                )
+                model.set_parameters(params, exact_match=False, device=device)
             else:
                 raise e
         # put other pytorch variables back in place
@@ -608,6 +614,37 @@ class BPTT(OffPolicyAlgorithm):
             model.policy.reset_noise()  # type: ignore[operator]
         return model
 
+    @classmethod
+    def load_policy(
+            self,
+            path,
+            device: Union[th.device, str] = "auto",
+            custom_objects: Optional[Dict[str, Any]] = None,
+            print_system_info: bool = False,
+    ):
+        data, params, pytorch_variables = load_from_zip_file(
+            path,
+        )
+
+        assert data is not None, "No data found in the saved file"
+        assert params is not None, "No params found in the saved file"
+
+        data, params, pytorch_variables = load_from_zip_file(
+            path,
+            device=device,
+            custom_objects=custom_objects,
+            print_system_info=print_system_info,
+        )
+
+        policy = data["policy_class"](
+            data["observation_space"],
+            data["action_space"],
+            data["lr_schedule"],
+            **data["policy_kwargs"])
+        # policy.set_parameters(params, exact_match=True, device=device)
+        state_dict = params.get("policy")
+        policy.load_state_dict(state_dict, strict=False)
+        return policy
 
     def collect_rollouts(
             self,

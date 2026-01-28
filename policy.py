@@ -349,7 +349,7 @@ class Policy(nn.Module):
             action_mean = self.actor.predict(obs, deterministic=True)
             action_sample = self.actor.predict(obs_batch[:-1], deterministic=False)
             action_sample = (self.actor.predict(obs_batch[:-1], deterministic=True) \
-                            + th.randn_like(action_sample) * 0.05).clamp(-1,1)
+                            + th.randn_like(action_sample) * 0.02).clamp(-1,1)
             # + (th.rand_like(action_sample)-0.5) * 0.2).clamp(-1, 1)
             actions = th.cat([action_mean.unsqueeze(0), action_sample], dim=0)
             q = self.critic(obs_batch, actions)[0].squeeze()
@@ -362,10 +362,13 @@ class Policy(nn.Module):
             #     th.zeros_like(max_q_indices, device=max_q_indices.device),
             #     max_q_indices
             #     )
-            mask = th.atleast_1d((max_q - q[0]).abs() <= 0.01)
+            mask = th.atleast_1d((max_q - q[0]).abs() <= 0.03)
             max_q_indices = th.where(mask, th.zeros_like(max_q_indices), max_q_indices)
             selected_actions = actions[max_q_indices.squeeze(),th.arange(len(max_q_indices), device=max_q_indices.device),]
             return selected_actions
+
+    def action_and_entropy(self, obs, deterministic=False):
+        return self.actor.action_and_entropy(obs, deterministic=deterministic)
 
     def set_training_mode(self, mode: bool = True):
         self.actor.train(mode)
